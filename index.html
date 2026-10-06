@@ -933,6 +933,7 @@
             </div>
             <span class="micro-label">02 / METRICS</span>
           </div>
+          <pre id="form-score" aria-live="polite">解析後にフォーム完成度の参考点数が表示されます。</pre>
           <pre id="measurements" aria-live="polite"></pre>
         </article>
 
@@ -1012,6 +1013,7 @@
       const sampleSelect = document.querySelector("#sample-frame");
       const preview = document.querySelector("#pose-preview");
       const previewContext = preview.getContext("2d");
+      const formScore = document.querySelector("#form-score");
       const measurements = document.querySelector("#measurements");
       const advice = document.querySelector("#advice");
       const referenceHeightInput = document.querySelector("#reference-height");
@@ -1318,7 +1320,7 @@
         }
       }
 
-      async function runExclusive(task) {
+      async function runExclusive(task, onError = null) {
         if (busy) return;
         busy = true;
         for (const control of [videoInput, handInput, clipStartInput, analyzeButton, sampleSelect, calibrateButton, resetCalibrationButton]) {
@@ -1329,6 +1331,7 @@
           await task();
         } catch (error) {
           console.error(error);
+          onError?.(error);
           status.textContent = `エラー: ${error.message ?? error}`;
         } finally {
           busy = false;
@@ -1411,23 +1414,80 @@
           ? extendedAfterLoad.metrics.knee - deepestKnee.metrics.knee
           : null;
 
-        return { hand, peak, deepestKnee, kneeExtension };
+        const kneeLeadSeconds = deepestKnee
+          ? peak.record.time - deepestKnee.record.time
+          : null;
+
+        return { hand, peak, deepestKnee, kneeExtension, kneeLeadSeconds };
+      }
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function assessForm(analysis) {
+        const { peak, kneeExtension, kneeLeadSeconds } = analysis;
+        const elbowScore = peak.metrics.elbow === null
+          ? null
+          : Math.round(clamp((peak.metrics.elbow - 105) / 55 * 100, 0, 100));
+        const lowerBodyScore = kneeExtension === null || kneeLeadSeconds === null
+          ? null
+          : Math.round(
+              clamp(kneeExtension / 30 * 80, 0, 80)
+                + (kneeLeadSeconds >= 0.5 ? 20 : kneeLeadSeconds >= 0.25 ? 12 : 0),
+            );
+        const torsoScore = peak.metrics.torsoLean === null
+          ? null
+          : Math.round(clamp(100 - Math.max(0, peak.metrics.torsoLean - 8) * 2.5, 0, 100));
+        const parts = [
+          {
+            label: "シュート腕の伸び",
+            weight: 40,
+            score: elbowScore,
+          },
+          {
+            label: "膝から腕へのつながり",
+            weight: 35,
+            score: lowerBodyScore,
+          },
+          {
+            label: "上体の軸",
+            weight: 25,
+            score: torsoScore,
+          },
+        ];
+        const available = parts.filter((part) => part.score !== null);
+        if (available.length === 0) return { parts, available, score: null };
+
+        const totalWeight = available.reduce((sum, part) => sum + part.weight, 0);
+        const score = Math.round(
+          available.reduce((sum, part) => sum + part.score * part.weight, 0) / totalWeight,
+        );
+        return { parts, available, score };
       }
 
       function updateReport() {
         const analysis = getShotAnalysis();
         if (!analysis) {
+          formScore.textContent = "フォーム完成度: 算出できません\n手首の位置を検出できるフレームが不足しています。全身とシュート腕が映る動画で再解析してください。";
           measurements.textContent = "手首を安定して検出できるフレームがありません。全身が見え、腕が隠れない動画を選んでください。";
           advice.textContent = "";
           updateHeightEstimate();
           return;
         }
 
-        const { hand, peak, deepestKnee, kneeExtension } = analysis;
+        const { hand, peak, deepestKnee, kneeExtension, kneeLeadSeconds } = analysis;
         const elbow = peak.metrics.elbow;
         const peakKnee = peak.metrics.knee;
         const torsoLean = peak.metrics.torsoLean;
+        const assessment = assessForm(analysis);
         const validCount = records.filter((record) => record.points.some((item) => item.score >= KEYPOINT_THRESHOLD)).length;
+        const partLines = assessment.parts.map((part) =>
+          `${part.label}: ${part.score === null ? "測定できず" : `${part.score} / 100点`}`,
+        );
+        formScore.textContent = assessment.score === null
+          ? `フォーム完成度: 算出できません\n関節角度を十分に取得できませんでした。全身が見え、関節が隠れない動画で再解析してください。\n${partLines.join("\n")}`
+          : `フォーム完成度（映像上の参考点）: ${assessment.score} / 100点\n評価できた項目: ${assessment.available.length} / 3（測定できた項目を100点換算）\n${partLines.join("\n")}\n配点: シュート腕40%・膝から腕へのつながり35%・上体の軸25%\n※評価項目が少ない場合は参考度が下がります。`;
         const lines = [
           `解析できたフレーム: ${validCount} / ${records.length}`,
           `シュートする手: ${hand === "R" ? "右手" : "左手"}`,
@@ -1441,23 +1501,62 @@
         ].filter(Boolean);
         measurements.textContent = lines.join("\n");
 
-        const tips = [];
+        const strengths = [];
+        const improvements = [];
+        const drills = [];
         if (elbow !== null) {
-          if (elbow < 145) {
-            tips.push(`リリース候補では肘が約${elbow.toFixed(0)}°です。痛みのない範囲で、腕を伸ばしながら手首を残すフォロースルーを試し、同じ角度の変化を動画で比べてください。`);
+          if (elbow >= 145) {
+            strengths.push(`リリース候補の肘は約${elbow.toFixed(0)}°。腕を伸ばす動きが見えています。肘を無理にロックせず、手首まで自然に振り切る形を続けましょう。`);
           } else {
-            tips.push(`リリース候補では肘が約${elbow.toFixed(0)}°まで伸びています。肘を無理に突っ張らず、リリース後も手首の形を保てるか確認してください。`);
+            improvements.push(`【シュート腕】候補時点の肘は約${elbow.toFixed(0)}°です。ボールを押し出す動きが強く見える場合は、肘を伸ばして手首を残すフォロースルーを意識します。`);
           }
+          drills.push("近い距離から片手のフォームシュートを5本。毎回、肘を伸ばして手首を下へ返した形で1秒止め、動画で同じ形か確認します。");
+        } else {
+          improvements.push("【シュート腕】肘角度を測れませんでした。シュート腕が体や他の人に隠れない横向きの映像で撮り直してください。");
         }
         if (kneeExtension !== null) {
-          if (kneeExtension < 12) {
-            tips.push("この動画では膝の曲げ伸ばしが小さく見えます。腕だけで投げず、無理のない膝の屈伸から腕へつなぐ動きを試してみてください。");
+          if (kneeExtension >= 20) {
+            strengths.push(`膝が最も曲がった後、候補時点までに約${kneeExtension.toFixed(0)}°伸びています。下半身を使う動きが映っています。`);
           } else {
-            tips.push(`膝が曲がった後、リリース候補までに約${kneeExtension.toFixed(0)}°伸びています。毎回同じリズムで下半身から腕へつなげられるか見比べてください。`);
+            improvements.push(`【膝から腕へのつながり】膝の伸びは約${kneeExtension.toFixed(0)}°です。腕だけで押し出している感覚があれば、痛みのない範囲で膝を軽く曲げ、床を押す動きから腕へつなげます。`);
           }
+          if (kneeLeadSeconds !== null && kneeLeadSeconds < 0.5) {
+            improvements.push(`膝が最も曲がった時刻から手首の最高点まで約${kneeLeadSeconds.toFixed(2)}秒です。動きの順序を見分けにくい短さなので、膝を伸ばし始めてから腕を振り上げるリズムをゆっくり確認してください。`);
+          } else if (kneeLeadSeconds !== null) {
+            strengths.push(`膝が最も曲がった時刻は手首の最高点より約${kneeLeadSeconds.toFixed(2)}秒前です。下半身から腕へ動きをつなげる順序が見えています。`);
+          }
+          drills.push("ボールを持たずに、膝を軽く曲げる→床を押して伸びる→腕を上げる動きをゆっくり5回。慣れたら同じリズムでフォームシュートを5本行います。");
+        } else {
+          improvements.push("【下半身】膝の動きを測れませんでした。腰から足首まで画面に入れ、膝が隠れない位置から撮影してください。");
         }
-        tips.push("これは2D関節位置から作った練習ヒントです。選手の体格や打ち方で適切な角度は異なるため、数値を理想値として扱わず、同じ撮影条件での変化を比べてください。");
-        advice.textContent = tips.join("\n\n");
+        if (torsoLean !== null) {
+          if (torsoLean <= 18) {
+            strengths.push(`候補時点の上体の傾きは画面の垂直から約${torsoLean.toFixed(0)}°です。大きく傾かずに打てているように見えます。`);
+          } else {
+            improvements.push(`【上体の軸】候補時点で画面の垂直から約${torsoLean.toFixed(0)}°傾いています。左右どちらかへ流れていないか、足の真上に胸を保つ意識で確認してください。`);
+          }
+          drills.push("足幅を決めてから、上体を大きく傾けずにゆっくり3回シュート動作を行います。正面と横から見て、毎回同じ姿勢に戻れるか確認します。");
+        } else {
+          improvements.push("【上体】肩と腰の位置を測れませんでした。両肩と腰が画面に入るよう、カメラ位置を調整してください。");
+        }
+        if (strengths.length === 0) strengths.push("今回の映像では、はっきり確認できる強みを判定できませんでした。まずは全身とシュート腕が見える撮影に整えましょう。");
+        if (improvements.length === 0) improvements.push("今回測れた項目に大きな崩れは見つかりませんでした。次は5本続けて撮影し、同じ動きを繰り返せるか確認しましょう。");
+        advice.textContent = [
+          "【今回できている点】",
+          ...strengths.map((item) => `・${item}`),
+          "",
+          "【次に直す・意識する点】",
+          ...improvements.map((item, index) => `${index + 1}. ${item}`),
+          "",
+          "【すぐできる練習】",
+          ...drills.map((item, index) => `${index + 1}. ${item}`),
+          "",
+          "【次の撮影のコツ】",
+          "頭から足首まで画面に入れ、シュートする側から横向きにスマホを固定します。同じ距離・角度で5本撮ると、点数と動きの変化を比べやすくなります。",
+          "",
+          "【点数の見方】",
+          "この点数は肘の伸び・膝の伸び幅と順序・上体の傾きに配点した、フォーム比較用の独自目安です。体格やセットシュート／ジャンプシュートの違いは判定していません。測定できない項目は採点から外して換算するため、評価項目が少ないほど参考度は下がります。手首が最も高いコマをリリース候補としているため、ボールが手を離れた瞬間やシュートの成否は評価していません。角度の正解探しより、同じ撮影条件で自分の動きを比べるために使ってください。",
+        ].join("\n");
         updateHeightEstimate();
       }
 
@@ -1594,6 +1693,7 @@
           calibrateButton.disabled = true;
           resetCalibrationButton.disabled = true;
           measurements.textContent = "";
+          formScore.textContent = "解析後にフォーム完成度の参考点数が表示されます。";
           advice.textContent = "";
           heightResult.textContent = "";
           setFrameCanvasSize();
@@ -1644,6 +1744,7 @@
           if (sampleTimes.length === 0) sampleTimes.push(0);
 
           records = [];
+          formScore.textContent = "解析しています。完了後にフォーム完成度の参考点数を表示します。";
           measurements.textContent = "";
           advice.textContent = "";
           calibration = null;
@@ -1673,6 +1774,8 @@
           showRecord(peakIndex);
           updateReport();
           status.textContent = `分析完了: ${records.length}フレームを解析しました。候補時刻や関節角度を確認できます。`;
+        }, () => {
+          formScore.textContent = "解析を完了できませんでした。表示されたエラーを確認し、動画を選び直して再度お試しください。";
         });
       });
 
