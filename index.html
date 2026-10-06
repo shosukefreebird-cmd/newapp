@@ -559,7 +559,164 @@
       }
 
       #advice {
+        display: grid;
+        gap: 18px;
+      }
+
+      .advice-score-card {
+        border: 1px solid rgba(225, 196, 142, 0.34);
+        border-left: 3px solid var(--gold-light);
+        background: linear-gradient(120deg, rgba(199, 166, 106, 0.12), rgba(16, 20, 19, 0.72));
+        padding: 17px 18px;
+      }
+
+      .advice-score-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .advice-score-caption {
+        margin: 0 0 2px;
+        color: var(--gold);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.14em;
+      }
+
+      .advice-score-title {
+        margin: 0;
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 550;
+      }
+
+      .advice-score-value {
+        display: flex;
+        align-items: baseline;
+        flex: 0 0 auto;
+        gap: 5px;
+        margin: 0;
+        color: var(--gold-light);
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .advice-score-value strong {
+        font-size: 48px;
+        font-weight: 550;
+        line-height: 1;
+      }
+
+      .advice-score-value span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .advice-score-context {
+        margin: 9px 0 0;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.6;
+      }
+
+      .advice-score-breakdown {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 7px;
+        margin-top: 14px;
+      }
+
+      .advice-score-part {
+        min-width: 0;
+        border: 1px solid var(--line);
+        background: rgba(8, 11, 10, 0.34);
+        padding: 8px 9px;
+      }
+
+      .advice-score-part span,
+      .advice-score-part strong {
+        display: block;
+      }
+
+      .advice-score-part span {
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.45;
+      }
+
+      .advice-score-part strong {
+        margin-top: 3px;
+        color: var(--green);
+        font-family: var(--mono);
+        font-size: 16px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .advice-section {
+        min-width: 0;
+      }
+
+      .advice-section-title {
+        margin: 0 0 8px;
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .advice-section--priority {
+        border-left: 2px solid var(--gold);
+        padding-left: 12px;
+      }
+
+      .advice-section--priority .advice-section-title {
+        color: var(--gold-light);
+        font-size: 16px;
+      }
+
+      .advice-list {
+        margin: 0;
+        padding-left: 20px;
         color: #d7d0be;
+        font-size: 13px;
+        line-height: 1.8;
+      }
+
+      .advice-list li + li {
+        margin-top: 9px;
+      }
+
+      .advice-list--priority {
+        font-size: 14px;
+      }
+
+      .advice-focus-label {
+        display: block;
+        margin-bottom: 2px;
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      .advice-inline-metric {
+        color: var(--gold-light);
+        font-size: 1.08em;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .advice-note {
+        margin: 0;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.8;
+      }
+
+      .advice-empty {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
       }
 
       .calibration-panel {
@@ -778,6 +935,14 @@
           min-height: 55px;
         }
 
+        .advice-score-header {
+          flex-wrap: wrap;
+        }
+
+        .advice-score-breakdown {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
         .panel-heading {
           align-items: flex-start;
         }
@@ -945,7 +1110,7 @@
             </div>
             <span class="micro-label">03 / REVIEW</span>
           </div>
-          <pre id="advice" aria-live="polite"></pre>
+          <div id="advice" aria-live="polite"></div>
         </article>
       </section>
 
@@ -1466,12 +1631,117 @@
         return { parts, available, score };
       }
 
+      function appendHighlightedText(target, text) {
+        const pattern = /(\d+(?:\.\d+)?(?:°|秒|点|本|回))/g;
+        let lastIndex = 0;
+        for (const match of text.matchAll(pattern)) {
+          target.append(document.createTextNode(text.slice(lastIndex, match.index)));
+          const emphasis = document.createElement("strong");
+          emphasis.className = "advice-inline-metric";
+          emphasis.textContent = match[0];
+          target.append(emphasis);
+          lastIndex = match.index + match[0].length;
+        }
+        target.append(document.createTextNode(text.slice(lastIndex)));
+      }
+
+      function addAdviceSection(title, items, { priority = false, ordered = false, note = false } = {}) {
+        if (!items.length) return;
+
+        const section = document.createElement("section");
+        section.className = `advice-section${priority ? " advice-section--priority" : ""}`;
+        const heading = document.createElement("h3");
+        heading.className = "advice-section-title";
+        heading.textContent = title;
+        section.append(heading);
+
+        const list = document.createElement(ordered ? "ol" : "ul");
+        list.className = `advice-list${priority ? " advice-list--priority" : ""}${note ? " advice-note" : ""}`;
+        for (const item of items) {
+          const row = document.createElement("li");
+          const labeled = item.match(/^【([^】]+)】(.*)$/);
+          if (labeled) {
+            const label = document.createElement("strong");
+            label.className = "advice-focus-label";
+            label.textContent = labeled[1];
+            row.append(label);
+            appendHighlightedText(row, labeled[2]);
+          } else {
+            appendHighlightedText(row, item);
+          }
+          list.append(row);
+        }
+        section.append(list);
+        advice.append(section);
+      }
+
+      function renderAdvice(assessment, strengths, improvements, drills, cameraAdvice) {
+        advice.replaceChildren();
+
+        const scoreCard = document.createElement("section");
+        scoreCard.className = "advice-score-card";
+        const header = document.createElement("div");
+        header.className = "advice-score-header";
+        const titleGroup = document.createElement("div");
+        const caption = document.createElement("p");
+        caption.className = "advice-score-caption";
+        caption.textContent = "FORM SCORE / 参考";
+        const title = document.createElement("h3");
+        title.className = "advice-score-title";
+        title.textContent = "フォーム完成度";
+        titleGroup.append(caption, title);
+
+        const value = document.createElement("p");
+        value.className = "advice-score-value";
+        const scoreNumber = document.createElement("strong");
+        scoreNumber.textContent = assessment.score === null ? "—" : String(assessment.score);
+        const denominator = document.createElement("span");
+        denominator.textContent = "/ 100点";
+        value.append(scoreNumber, denominator);
+        header.append(titleGroup, value);
+        scoreCard.append(header);
+
+        const context = document.createElement("p");
+        context.className = "advice-score-context";
+        context.textContent = assessment.score === null
+          ? "点数を出すための関節角度が不足しています。全身とシュート腕が見える映像で撮り直してください。"
+          : `${assessment.available.length} / 3項目を評価。測定できた項目を100点換算しています。項目が少ない場合は参考度が下がります。`;
+        scoreCard.append(context);
+
+        const breakdown = document.createElement("div");
+        breakdown.className = "advice-score-breakdown";
+        for (const part of assessment.parts) {
+          const cell = document.createElement("div");
+          cell.className = "advice-score-part";
+          const label = document.createElement("span");
+          label.textContent = part.label;
+          const partScore = document.createElement("strong");
+          partScore.textContent = part.score === null ? "—" : `${part.score}点`;
+          cell.append(label, partScore);
+          breakdown.append(cell);
+        }
+        scoreCard.append(breakdown);
+        advice.append(scoreCard);
+
+        addAdviceSection("今回できている点", strengths);
+        addAdviceSection("次に意識するポイント", improvements, { priority: true, ordered: true });
+        addAdviceSection("すぐできる練習", drills, { ordered: true });
+        addAdviceSection("次の撮影のコツ", [cameraAdvice]);
+        addAdviceSection("点数の見方", [
+          "この点数は肘の伸び・膝の伸び幅と順序・上体の傾きに配点したフォーム比較用の目安です。体格やセットシュート／ジャンプシュートの違い、実際のボールリリースやシュートの成否は判定しません。同じ撮影条件で自分の変化を見るために使ってください。",
+        ], { note: true });
+      }
+
       function updateReport() {
         const analysis = getShotAnalysis();
         if (!analysis) {
           formScore.textContent = "フォーム完成度: 算出できません\n手首の位置を検出できるフレームが不足しています。全身とシュート腕が映る動画で再解析してください。";
           measurements.textContent = "手首を安定して検出できるフレームがありません。全身が見え、腕が隠れない動画を選んでください。";
-          advice.textContent = "";
+          advice.replaceChildren();
+          const emptyAdvice = document.createElement("p");
+          emptyAdvice.className = "advice-empty";
+          emptyAdvice.textContent = "手首を検出できないため、フォームの助言を作れませんでした。シュート腕が隠れず、全身が映る動画を選んでください。";
+          advice.append(emptyAdvice);
           updateHeightEstimate();
           return;
         }
@@ -1541,22 +1811,13 @@
         }
         if (strengths.length === 0) strengths.push("今回の映像では、はっきり確認できる強みを判定できませんでした。まずは全身とシュート腕が見える撮影に整えましょう。");
         if (improvements.length === 0) improvements.push("今回測れた項目に大きな崩れは見つかりませんでした。次は5本続けて撮影し、同じ動きを繰り返せるか確認しましょう。");
-        advice.textContent = [
-          "【今回できている点】",
-          ...strengths.map((item) => `・${item}`),
-          "",
-          "【次に直す・意識する点】",
-          ...improvements.map((item, index) => `${index + 1}. ${item}`),
-          "",
-          "【すぐできる練習】",
-          ...drills.map((item, index) => `${index + 1}. ${item}`),
-          "",
-          "【次の撮影のコツ】",
+        renderAdvice(
+          assessment,
+          strengths,
+          improvements,
+          drills,
           "頭から足首まで画面に入れ、シュートする側から横向きにスマホを固定します。同じ距離・角度で5本撮ると、点数と動きの変化を比べやすくなります。",
-          "",
-          "【点数の見方】",
-          "この点数は肘の伸び・膝の伸び幅と順序・上体の傾きに配点した、フォーム比較用の独自目安です。体格やセットシュート／ジャンプシュートの違いは判定していません。測定できない項目は採点から外して換算するため、評価項目が少ないほど参考度は下がります。手首が最も高いコマをリリース候補としているため、ボールが手を離れた瞬間やシュートの成否は評価していません。角度の正解探しより、同じ撮影条件で自分の動きを比べるために使ってください。",
-        ].join("\n");
+        );
         updateHeightEstimate();
       }
 
