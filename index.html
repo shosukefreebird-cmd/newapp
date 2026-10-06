@@ -8,7 +8,7 @@
       name="description"
       content="ブラウザ内の姿勢推定で、バスケットボールのシュートフォームを分析します。"
     />
-    <title>バスケシュートフォーム分析</title>
+    <title>SHOTFORM — 一投を、研ぎ澄ます。</title>
     <style>
       :root {
         color-scheme: dark;
@@ -183,12 +183,33 @@
       }
 
       .hero h1 {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
         max-width: 720px;
         margin: 0;
-        font-size: clamp(34px, 5.2vw, 58px);
-        font-weight: 560;
-        letter-spacing: 0.045em;
-        line-height: 1.32;
+        font-size: 16px;
+        font-weight: 400;
+        letter-spacing: 0;
+        line-height: 1.1;
+      }
+
+      .hero-title-name {
+        color: var(--gold-light);
+        font-size: clamp(42px, 7.6vw, 82px);
+        font-weight: 500;
+        letter-spacing: 0.15em;
+        line-height: 1.05;
+        white-space: nowrap;
+      }
+
+      .hero-title-tagline {
+        color: var(--text);
+        font-size: clamp(18px, 2vw, 23px);
+        font-weight: 430;
+        letter-spacing: 0.18em;
+        line-height: 1.55;
       }
 
       .hero-copy {
@@ -676,8 +697,14 @@
           gap: 8px;
         }
 
-        .hero h1 {
-          font-size: 32px;
+        .hero-title-name {
+          font-size: clamp(28px, 9vw, 36px);
+          letter-spacing: 0.12em;
+        }
+
+        .hero-title-tagline {
+          font-size: 15px;
+          letter-spacing: 0.1em;
         }
 
         .hero-copy {
@@ -782,7 +809,10 @@
       <section class="hero" aria-labelledby="page-title">
         <div>
           <p class="eyebrow">PLAYER DEVELOPMENT &nbsp; / &nbsp; 01</p>
-          <h1 id="page-title">シュートフォームを、<br />映像から読み解く。</h1>
+          <h1 id="page-title">
+            <span class="hero-title-name">SHOTFORM</span>
+            <span class="hero-title-tagline">一投を、研ぎ澄ます。</span>
+          </h1>
           <p class="hero-copy">
             姿勢推定で動きを可視化し、リリース候補や関節角度を確認。フォームの変化を、同じ撮影条件で比較できます。
           </p>
