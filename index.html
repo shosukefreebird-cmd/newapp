@@ -1151,13 +1151,14 @@
       </footer>
     </main>
 
-    <script type="module">
-      import {
+    <script>
+      (async function initializeApp() {
+      const {
         AutoImageProcessor,
         AutoModel,
         RawImage,
         env,
-      } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
+      } = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1");
 
       env.allowLocalModels = false;
 
@@ -2123,6 +2124,13 @@
         video.pause();
         for (const url of objectUrls) URL.revokeObjectURL(url);
         objectUrls.clear();
+      });
+      })().catch((error) => {
+        console.error("SHOTFORM initialization failed", error);
+        const statusElement = document.querySelector("#status");
+        if (statusElement) {
+          statusElement.textContent = `初期化に失敗しました: ${error.message ?? error}`;
+        }
       });
     </script>
   </body>
